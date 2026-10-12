@@ -148,11 +148,10 @@ def _call_gemini(
     api_key: str,
     model: str,
 ) -> str:
-    """Call Google Gemini API for answer generation."""
+    """Call Google Gemini API for answer generation with automatic fallback cascade."""
     import google.generativeai as genai
 
     genai.configure(api_key=api_key)
-    gemini_model = genai.GenerativeModel(model)
     prompt = (
         f"{SYSTEM_PROMPT}\n\n"
         f"QUESTION: {question}\n\n"
@@ -161,8 +160,50 @@ def _call_gemini(
         "Based ONLY on the above evidence, answer the question. "
         "Output valid JSON as specified."
     )
-    response = gemini_model.generate_content(prompt)
-    return response.text
+
+    # Build model cascade list: configured model first, followed by fallbacks
+    candidates = [model]
+    for fb in ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.5-flash", "gemini-3.8-flash"]:
+        if fb not in candidates:
+            candidates.append(fb)
+
+    last_error = None
+    for cand in candidates:
+        try:
+            gemini_model = genai.GenerativeModel(cand)
+            response = gemini_model.generate_content(prompt)
+            if cand != model:
+                logger.info(f"Fallback to model '{cand}' succeeded.")
+            return response.text
+        except Exception as e:
+            last_error = e
+            err_msg = str(e)
+            if "429" in err_msg or "ResourceExhausted" in err_msg:
+                logger.warning(f"Gemini model '{cand}' quota exceeded (429). Trying fallback...")
+                continue
+            elif "404" in err_msg:
+                logger.warning(f"Gemini model '{cand}' not found (404). Trying fallback...")
+                continue
+            else:
+                logger.error(f"Error calling Gemini model '{cand}': {e}")
+                break
+
+    # If all models hit quota or failed, provide a graceful structured answer with retrieved evidence
+    logger.error(f"All Gemini models exhausted or failed: {last_error}")
+    return json.dumps({
+        "answer": (
+            "The Gemini API free-tier quota is currently exhausted for this API key. "
+            "However, relevant regulatory evidence was successfully retrieved from the database. "
+            "Please check the Evidence and Citations tabs below to view the indexed provisions."
+        ),
+        "status": "INSUFFICIENT_EVIDENCE",
+        "citations": [],
+        "supersession_notes": [
+            {
+                "description": f"AI Generation Notice: Gemini free-tier quota limit reached ({last_error}). Evidence retrieved from local Atlas index."
+            }
+        ],
+    })
 
 
 def _parse_llm_response(raw: str) -> Dict[str, Any]:

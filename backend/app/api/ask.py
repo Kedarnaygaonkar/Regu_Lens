@@ -34,4 +34,17 @@ def ask(request: AskRequest):
     """
     emb_provider = _get_embedding_provider()
     generator = AnswerGenerator(embedding_provider=emb_provider)
-    return generator.answer(request)
+    try:
+        return generator.answer(request)
+    except Exception as exc:
+        from app.models.query import AnswerStatus
+        return AskResponse(
+            question=request.question,
+            answer=f"An error occurred while generating the answer: {exc}",
+            status=AnswerStatus.INSUFFICIENT_EVIDENCE,
+            citations=[],
+            supersession_notes=[],
+            evidence=[],
+            related_documents=[],
+            latency_ms=0.0,
+        )

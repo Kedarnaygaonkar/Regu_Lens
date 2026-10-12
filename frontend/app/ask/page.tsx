@@ -60,19 +60,21 @@ export default function AskPage() {
   const [question, setQuestion] = useState("");
   const [response, setResponse] = useState<AskResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [includeSuperseded, setIncludeSuperseded] = useState(false);
   const [activeTab, setActiveTab] = useState<"answer" | "evidence" | "graph">("answer");
 
   const handleAsk = async (q: string = question) => {
     if (!q.trim()) return;
     setLoading(true);
+    setError(null);
     setResponse(null);
     setActiveTab("answer");
     try {
       const res = await ask(q, 10, includeSuperseded);
       setResponse(res);
-    } catch {
-      setResponse(null);
+    } catch (err: any) {
+      setError(err?.message || "Failed to generate answer. Check server logs or quota.");
     } finally {
       setLoading(false);
     }
@@ -131,6 +133,19 @@ export default function AskPage() {
           ))}
         </div>
       </div>
+
+      {/* Error */}
+      {error && (
+        <div className="glass-card p-5 mb-6 border border-red-500/40 bg-red-500/10 text-red-300 rounded-xl">
+          <div className="flex items-center gap-3">
+            <span className="text-xl">⚠️</span>
+            <div>
+              <p className="font-semibold text-sm text-red-200">Unable to generate answer</p>
+              <p className="text-xs text-red-300/90 mt-0.5">{error}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Loading */}
       {loading && (
